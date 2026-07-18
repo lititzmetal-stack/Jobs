@@ -1,5 +1,5 @@
 // Minimal service worker — enables "install to home screen" and a basic offline shell.
-const CACHE = 'lititz-time-v3';
+const CACHE = 'lititz-time-v4';
 const ASSETS = [
   './',
   './index.html',
