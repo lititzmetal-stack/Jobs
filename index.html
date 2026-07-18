@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lititz Metal Company — Jobs &amp; Time</title>
+
+<!-- PWA / home-screen install -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#363b40">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lititz Time">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase (compat SDK, no build step) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --concrete: #e7e4dd;
+    --steel: #363b40;
+    --steel-light: #565d64;
+    --safety: #f2b705;
+    --rust: #b5502e;
+    --ok: #3f7a4e;
+    --line: #c7c2b6;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--concrete);
+    color: var(--steel);
+    font-family:'IBM Plex Sans', sans-serif;
+    min-height:100vh;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1,h2,h3{
+    font-family:'Oswald', sans-serif;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    margin:0;
+  }
+  .mono{ font-family:'IBM Plex Mono', monospace; }
+
+  header{
+    background: linear-gradient(180deg, var(--steel) 0%, #2a2e32 100%);
+    color: var(--concrete);
+    padding: 18px 20px 16px;
+    box-shadow: 0 3px 0 var(--safety), 0 4px 10px rgba(0,0,0,0.25);
+    position: sticky; top:0; z-index: 10;
+  }
+  header .brand{ display:flex; align-items:baseline; gap:10px; }
+  header .brand h1{ font-size:1.35rem; color:#fff; }
+  header .brand span{ font-size:0.7rem; color: var(--safety); letter-spacing:0.12em; }
+
+  nav{ display:flex; gap:6px; margin-top:14px; }
+  nav button{
+    flex:1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: rgba(255,255,255,0.75);
+    font-family:'Oswald', sans-serif;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    font-size:0.78rem;
+    padding: 9px 6px;
+    border-radius: 3px;
+    cursor:pointer;
+    transition: all 0.15s ease;
+  }
+  nav button.active{ background: var(--safety); border-color: var(--safety); color: #2a2e32; font-weight:600; }
+
+  main{ max-width: 640px; margin: 0 auto; padding: 22px 18px 60px; }
+
+  .card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:18px;
+    margin-bottom:16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .pinGate{ text-align:center; padding: 40px 10px; }
+  .pinGate input{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:1.4rem;
+    letter-spacing:0.4em;
+    text-align:center;
+    width: 160px;
+    padding:10px;
+    border:2px solid var(--steel);
+    border-radius:4px;
+    margin:14px 0;
+  }
+  .btn{
+    display:inline-block;
+    background: var(--steel);
+    color:#fff;
+    border:none;
+    padding:11px 20px;
+    border-radius:4px;
+    font-family:'Oswald', sans-serif;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    font-size:0.85rem;
+    cursor:pointer;
+  }
+  .btn.safety{ background: var(--safety); color:#2a2e32; font-weight:600; }
+  .btn.rust{ background: var(--rust); color:#fff; }
+  .btn:disabled{ opacity:0.5; cursor:not-allowed; }
+  .errMsg{ color: var(--rust); font-size:0.85rem; margin-top:6px; min-height:1em; }
+
+  /* worker select */
+  .workerPick{ text-align:center; padding: 30px 10px; }
+  .workerBtn{
+    display:block; width:100%; max-width:280px; margin:0 auto 10px;
+    background:#fff; border:2px solid var(--steel); border-radius:6px;
+    padding:16px; font-family:'Oswald'; font-size:1.1rem; text-transform:uppercase;
+    letter-spacing:0.03em; cursor:pointer;
+  }
+  .workerBtn:active{ transform:scale(0.98); }
+  .switchWorker{ font-size:0.78rem; color: var(--steel-light); text-align:right; margin-bottom:10px; cursor:pointer; text-decoration:underline; }
+
+  .statusBar{
+    display:flex; align-items:center; justify-content:space-between;
+    background: var(--steel); color: var(--concrete);
+    padding: 14px 16px; border-radius:6px; margin-bottom:12px;
+  }
+  .statusBar .dot{ width:10px; height:10px; border-radius:50%; background: #666; display:inline-block; margin-right:8px; }
+  .statusBar.working .dot{ background: var(--ok); box-shadow:0 0 8px var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+  .statusBar .label{ font-size:0.75rem; color:#a9a6a0; text-transform:uppercase; letter-spacing:0.08em; }
+  .statusBar .job{ font-family:'Oswald'; font-size:1.05rem; }
+  .statusBar .time{ font-family:'IBM Plex Mono'; font-size:1.2rem; }
+
+  .shopBtn{
+    width:100%; border:none; border-radius:6px; padding:16px; margin-bottom:18px;
+    font-family:'Oswald'; text-transform:uppercase; letter-spacing:0.05em;
+    font-size:1rem; cursor:pointer; color:#fff;
+  }
+  .shopBtn.start{ background: var(--ok); }
+  .shopBtn.stop{ background: var(--rust); }
+
+  .jobBtn{
+    width:100%; text-align:left; background:#fff; border:2px solid var(--line);
+    border-radius:6px; padding:16px; margin-bottom:10px; cursor:pointer;
+    display:flex; align-items:center; justify-content:space-between; transition: all 0.12s ease;
+  }
+  .jobBtn:active{ transform: scale(0.98); }
+  .jobBtn:disabled{ opacity:0.45; cursor:not-allowed; }
+  .jobBtn .name{ font-family:'Oswald'; font-size:1.05rem; text-transform:uppercase; letter-spacing:0.02em; }
+  .jobBtn .tag{ font-size:0.7rem; color:var(--steel-light); font-family:'IBM Plex Mono'; }
+  .jobBtn.current{ border-color: var(--ok); background: #f0f7f1; }
+  .jobBtn.current .name{ color: var(--ok); }
+  .empty{ color: var(--steel-light); font-size:0.9rem; padding:20px 0; text-align:center; }
+
+  .row{ display:flex; gap:10px; align-items:center; }
+  .row + .row{ margin-top:10px; }
+  label{ font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--steel-light); display:block; margin-bottom:4px; }
+  input[type=date], input[type=number], input[type=text]{
+    font-family:'IBM Plex Mono', monospace;
+    padding:8px; border:1px solid var(--line); border-radius:4px; font-size:0.9rem;
+  }
+  table{ width:100%; border-collapse:collapse; margin-top:12px; font-size:0.88rem; }
+  th{ text-align:left; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--steel-light); border-bottom:2px solid var(--steel); padding:6px 4px; }
+  td{ padding:8px 4px; border-bottom:1px solid var(--line); }
+  td.num{ font-family:'IBM Plex Mono'; text-align:right; }
+  .totalBar{
+    display:flex; justify-content:space-between; align-items:baseline;
+    background: var(--steel); color:#fff; padding:14px 16px; border-radius:6px; margin-top:14px;
+  }
+  .totalBar .amt{ font-family:'IBM Plex Mono'; font-size:1.5rem; color: var(--safety); }
+  .jobRow{ display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); cursor:default; }
+  .jobRow:last-child{ border-bottom:none; }
+  .jobRow.clickable{ cursor:pointer; }
+  .jobRow.clickable:hover{ background:#faf9f6; }
+  .toggle{ width:20px; height:20px; }
+  .smallBtn{ font-size:0.75rem; padding:5px 10px; }
+  .sectionTitle{ font-size:1rem; margin-bottom:12px; color: var(--steel); }
+  .muted{ color: var(--steel-light); font-size:0.82rem; }
+  .jobDetail{ display:none; margin-top:8px; padding:10px; background:#faf9f6; border-radius:4px; }
+  .jobDetail.open{ display:block; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Lititz Metal Co.</h1>
+    <span>Internal — Jobs &amp; Time</span>
+  </div>
+  <nav>
+    <button class="navBtn active" data-view="clock">Clock</button>
+    <button class="navBtn" data-view="summary">Summary</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- CLOCK -->
+  <section id="view-clock" class="view active">
+
+    <div id="workerPick" class="workerPick">
+      <h2 style="font-size:1.1rem; margin-bottom:16px;">Who's clocking in?</h2>
+      <div id="workerBtnList"></div>
+    </div>
+
+    <div id="clockContent" style="display:none;">
+      <div class="switchWorker" id="switchWorkerLink">Not <span id="currentWorkerName"></span>? Switch worker</div>
+
+      <div class="statusBar" id="shopStatusBar">
+        <div>
+          <div class="label"><span class="dot"></span><span id="shopStatusLabel">Not in the shop</span></div>
+        </div>
+        <div class="time mono" id="shopStatusTime">&mdash;</div>
+      </div>
+      <button class="shopBtn start" id="shopToggleBtn">Clock In to Shop</button>
+
+      <div class="statusBar" id="jobStatusBar">
+        <div>
+          <div class="label">Current job</div>
+          <div class="job" id="jobStatusJob">None selected</div>
+        </div>
+        <div class="time mono" id="jobStatusTime">&mdash;</div>
+      </div>
+
+      <h3 class="sectionTitle">Jobs — tap to clock in</h3>
+      <div id="jobList"><div class="empty">Loading jobs...</div></div>
+    </div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="view-summary" class="view">
+
+    <div id="summaryContent">
+
+      <div class="card">
+        <h3 class="sectionTitle">Shop hours — unpaid, by day</h3>
+        <table>
+          <thead><tr><th></th><th>Date</th><th>Worker</th><th>Hours</th></tr></thead>
+          <tbody id="dayRowsBody"></tbody>
+        </table>
+        <div class="totalBar">
+          <div>
+            <div class="label" style="color:#bdb9b0; font-size:0.7rem; text-transform:uppercase;">Selected total</div>
+            <div id="selectedHours" class="mono" style="font-size:1.1rem;">0.00 hrs</div>
+          </div>
+        </div>
+        <button class="btn rust" id="markPaidBtn" style="width:100%; margin-top:14px;">Mark selected days as paid</button>
+        <p class="muted" style="margin-top:8px;">Check the days you're paying out (every few weeks, whatever chunk makes sense), then mark them paid. Unchecked days stay outstanding.</p>
+      </div>
+
+      <div class="card">
+        <h3 class="sectionTitle">Recently paid</h3>
+        <div id="paidHistory"><p class="muted">None yet.</p></div>
+      </div>
+
+      <div class="card">
+        <h3 class="sectionTitle">Workers</h3>
+        <div id="workerManageList"></div>
+        <div class="row" style="margin-top:14px;">
+          <input type="text" id="newWorkerName" placeholder="New worker name" style="flex:1;">
+          <button class="btn smallBtn" id="addWorkerBtn">Add worker</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="sectionTitle">Jobs</h3>
+        <div id="jobManageList"></div>
+        <div class="row" style="margin-top:14px;">
+          <input type="text" id="newJobName" placeholder="New job name" style="flex:1;">
+          <button class="btn smallBtn" id="addJobBtn">Add job</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="sectionTitle">Hours by job</h3>
+        <p class="muted" style="margin-bottom:10px;">Tap a job to see its day-by-day hours.</p>
+        <div id="jobHoursList"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* ============ SETUP ============
+   1. Create a free Firebase project at https://console.firebase.google.com
+   2. Add a Web App, copy its config below into firebaseConfig.
+   3. In the Firebase console, create a Firestore database (production mode is fine).
+   4. Set Firestore rules to allow read/write (small internal tool, no Firebase Auth):
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            match /{document=**} { allow read, write: if true; }
+          }
+        }
+   5. Open the app, go to the Summary tab, and add your workers there (e.g. Carson).
+   6. Host this single file on GitHub Pages same as your other tools.
+================================== */
+
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+let WORKERS = []; // loaded from Firestore 'workers' collection
+
+let db = null;
+let configIsPlaceholder = firebaseConfig.apiKey === "YOUR_API_KEY";
+
+if (!configIsPlaceholder) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} else {
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.view').forEach(v => {
+      const warn = document.createElement('div');
+      warn.className = 'card';
+      warn.style.borderLeft = '4px solid var(--rust)';
+      warn.innerHTML = '<strong>Setup needed:</strong> add your Firebase config in the script section of this file before this app will work.';
+      v.prepend(warn);
+    });
+  });
+}
+
+// ---------- Nav ----------
+document.querySelectorAll('.navBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.navBtn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+    if (btn.dataset.view === 'clock') loadClockView();
+    if (btn.dataset.view === 'summary') loadSummaryView();
+  });
+});
+
+// ---------- Helpers ----------
+function fmtTime(date) {
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+function fmtDate(date) {
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+function dayKey(date) {
+  return date.getFullYear() + '-' + (date.getMonth()+1).toString().padStart(2,'0') + '-' + date.getDate().toString().padStart(2,'0');
+}
+function hoursBetween(a, b) {
+  return (b.getTime() - a.getTime()) / 3600000;
+}
+
+// ---------- Worker select ----------
+async function loadWorkers() {
+  if (!db) return;
+  const snap = await db.collection('workers').orderBy('name').get();
+  WORKERS = snap.docs.map(d => d.data().name);
+}
+
+async function renderWorkerPicker() {
+  await loadWorkers();
+  const list = document.getElementById('workerBtnList');
+  list.innerHTML = '';
+  if (WORKERS.length === 0) {
+    list.innerHTML = '<p class="muted">No workers yet. Add one in the Summary tab.</p>';
+    return;
+  }
+  WORKERS.forEach(name => {
+    const b = document.createElement('button');
+    b.className = 'workerBtn';
+    b.textContent = name;
+    b.onclick = () => {
+      sessionStorage.setItem('currentWorker', name);
+      showClockContentFor(name);
+    };
+    list.appendChild(b);
+  });
+}
+function showClockContentFor(name) {
+  document.getElementById('workerPick').style.display = 'none';
+  document.getElementById('clockContent').style.display = 'block';
+  document.getElementById('currentWorkerName').textContent = name;
+  loadClockView();
+}
+document.getElementById('switchWorkerLink').addEventListener('click', () => {
+  sessionStorage.removeItem('currentWorker');
+  document.getElementById('clockContent').style.display = 'none';
+  document.getElementById('workerPick').style.display = 'block';
+});
+
+(async () => {
+  await renderWorkerPicker();
+  const savedWorker = sessionStorage.getItem('currentWorker');
+  if (savedWorker && WORKERS.includes(savedWorker)) {
+    showClockContentFor(savedWorker);
+  }
+})();
+
+// ---------- Clock view ----------
+async function loadClockView() {
+  if (!db) return;
+  const worker = sessionStorage.getItem('currentWorker');
+  if (!worker) return;
+
+  const jobList = document.getElementById('jobList');
+  jobList.innerHTML = '<div class="empty">Loading jobs...</div>';
+
+  const [jobsSnap, openShopSnap, openJobSnap] = await Promise.all([
+    db.collection('jobs').where('active', '==', true).orderBy('name').get(),
+    db.collection('shopEntries').where('worker', '==', worker).where('clockOut', '==', null).limit(1).get(),
+    db.collection('jobEntries').where('worker', '==', worker).where('clockOut', '==', null).limit(1).get()
+  ]);
+
+  let openShopId = null, openShop = null;
+  if (!openShopSnap.empty) { openShopId = openShopSnap.docs[0].id; openShop = openShopSnap.docs[0].data(); }
+  let openJobId = null, openJob = null;
+  if (!openJobSnap.empty) { openJobId = openJobSnap.docs[0].id; openJob = openJobSnap.docs[0].data(); }
+
+  const shopBar = document.getElementById('shopStatusBar');
+  const shopBtn = document.getElementById('shopToggleBtn');
+  if (openShop) {
+    shopBar.classList.add('working');
+    document.getElementById('shopStatusLabel').textContent = 'In the shop';
+    document.getElementById('shopStatusTime').textContent = 'since ' + fmtTime(openShop.clockIn.toDate());
+    shopBtn.textContent = 'Clock Out of Shop';
+    shopBtn.className = 'shopBtn stop';
+  } else {
+    shopBar.classList.remove('working');
+    document.getElementById('shopStatusLabel').textContent = 'Not in the shop';
+    document.getElementById('shopStatusTime').textContent = '—';
+    shopBtn.textContent = 'Clock In to Shop';
+    shopBtn.className = 'shopBtn start';
+  }
+
+  const jobBar = document.getElementById('jobStatusBar');
+  if (openJob) {
+    jobBar.classList.add('working');
+    document.getElementById('jobStatusJob').textContent = openJob.jobName;
+    document.getElementById('jobStatusTime').textContent = 'since ' + fmtTime(openJob.clockIn.toDate());
+  } else {
+    jobBar.classList.remove('working');
+    document.getElementById('jobStatusJob').textContent = 'None selected';
+    document.getElementById('jobStatusTime').textContent = '—';
+  }
+
+  shopBtn.onclick = async () => {
+    shopBtn.disabled = true;
+    if (openShopId) {
+      // clocking out of shop: close any open job first, then close shop
+      if (openJobId) {
+        await db.collection('jobEntries').doc(openJobId).update({ clockOut: firebase.firestore.FieldValue.serverTimestamp() });
+      }
+      await db.collection('shopEntries').doc(openShopId).update({ clockOut: firebase.firestore.FieldValue.serverTimestamp() });
+    } else {
+      await db.collection('shopEntries').add({ worker, clockIn: firebase.firestore.FieldValue.serverTimestamp(), clockOut: null, paid: false });
+    }
+    loadClockView();
+  };
+
+  if (jobsSnap.empty) {
+    jobList.innerHTML = '<div class="empty">No active jobs yet. Add one in the Summary tab.</div>';
+    return;
+  }
+
+  jobList.innerHTML = '';
+  jobsSnap.forEach(doc => {
+    const job = doc.data();
+    const isCurrent = openJobId && openJob && openJob.jobId === doc.id;
+    const b = document.createElement('button');
+    b.className = 'jobBtn' + (isCurrent ? ' current' : '');
+    b.innerHTML = '<span class="name">' + job.name + '</span><span class="tag">' + (isCurrent ? 'CURRENT — TAP TO CLOCK OUT' : 'TAP TO CLOCK IN') + '</span>';
+    b.onclick = async () => {
+      b.disabled = true;
+      let shopId = openShopId;
+      // auto-start shop time if not already clocked in
+      if (!shopId) {
+        const ref = await db.collection('shopEntries').add({ worker, clockIn: firebase.firestore.FieldValue.serverTimestamp(), clockOut: null, paid: false });
+        shopId = ref.id;
+      }
+      if (openJobId) {
+        await db.collection('jobEntries').doc(openJobId).update({ clockOut: firebase.firestore.FieldValue.serverTimestamp() });
+      }
+      if (!isCurrent) {
+        await db.collection('jobEntries').add({
+          worker,
+          jobId: doc.id,
+          jobName: job.name,
+          clockIn: firebase.firestore.FieldValue.serverTimestamp(),
+          clockOut: null
+        });
+      }
+      loadClockView();
+    };
+    jobList.appendChild(b);
+  });
+}
+
+// ---------- Summary view ----------
+async function loadSummaryView() {
+  if (!db) return;
+  await loadWorkerManageList();
+  await loadJobManageList();
+  await loadDayRows();
+  await loadPaidHistory();
+  await loadJobHoursList();
+}
+
+// -- worker management --
+async function loadWorkerManageList() {
+  const container = document.getElementById('workerManageList');
+  container.innerHTML = 'Loading...';
+  const snap = await db.collection('workers').orderBy('name').get();
+  container.innerHTML = '';
+  if (snap.empty) {
+    container.innerHTML = '<p class="muted">No workers yet. Add one below.</p>';
+    return;
+  }
+  snap.forEach(doc => {
+    const w = doc.data();
+    const row = document.createElement('div');
+    row.className = 'jobRow';
+    row.innerHTML = '<span>' + w.name + '</span>';
+    const del = document.createElement('button');
+    del.className = 'btn smallBtn rust';
+    del.textContent = 'Remove';
+    del.onclick = async () => {
+      if (!confirm('Remove ' + w.name + '? Their logged hours stay in the records.')) return;
+      await db.collection('workers').doc(doc.id).delete();
+      loadWorkerManageList();
+      renderWorkerPicker();
+    };
+    row.appendChild(del);
+    container.appendChild(row);
+  });
+}
+document.getElementById('addWorkerBtn').addEventListener('click', async () => {
+  const input = document.getElementById('newWorkerName');
+  const name = input.value.trim();
+  if (!name) return;
+  await db.collection('workers').add({ name });
+  input.value = '';
+  loadWorkerManageList();
+  renderWorkerPicker();
+});
+
+// -- job management --
+async function loadJobManageList() {
+  const container = document.getElementById('jobManageList');
+  container.innerHTML = 'Loading...';
+  const snap = await db.collection('jobs').orderBy('name').get();
+  container.innerHTML = '';
+  if (snap.empty) {
+    container.innerHTML = '<p class="muted">No jobs yet. Add one below.</p>';
+    return;
+  }
+  snap.forEach(doc => {
+    const job = doc.data();
+    const row = document.createElement('div');
+    row.className = 'jobRow';
+    row.innerHTML = '<span>' + job.name + '</span>';
+    const toggleWrap = document.createElement('label');
+    toggleWrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:0.8rem;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.className = 'toggle'; cb.checked = job.active;
+    cb.onchange = async () => { await db.collection('jobs').doc(doc.id).update({ active: cb.checked }); };
+    toggleWrap.appendChild(cb);
+    toggleWrap.appendChild(document.createTextNode('Active'));
+    row.appendChild(toggleWrap);
+    container.appendChild(row);
+  });
+}
+document.getElementById('addJobBtn').addEventListener('click', async () => {
+  const input = document.getElementById('newJobName');
+  const name = input.value.trim();
+  if (!name) return;
+  await db.collection('jobs').add({ name, active: true });
+  input.value = '';
+  loadJobManageList();
+  loadJobHoursList();
+});
+
+// -- shop hours by day (payroll) --
+let dayGroups = []; // {key, dateLabel, worker, hours, entryIds}
+
+async function loadDayRows() {
+  const body = document.getElementById('dayRowsBody');
+  body.innerHTML = '<tr><td colspan="4" class="muted">Loading...</td></tr>';
+
+  const snap = await db.collection('shopEntries').where('paid', '==', false).get();
+  const groups = {}; // key -> {dateLabel, worker, hours, entryIds}
+
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!d.clockOut) return; // skip currently open session
+    const inTime = d.clockIn.toDate();
+    const outTime = d.clockOut.toDate();
+    const key = dayKey(inTime) + '|' + d.worker;
+    if (!groups[key]) groups[key] = { dateLabel: fmtDate(inTime), sortDate: inTime, worker: d.worker, hours: 0, entryIds: [] };
+    groups[key].hours += hoursBetween(inTime, outTime);
+    groups[key].entryIds.push(doc.id);
+  });
+
+  dayGroups = Object.values(groups).sort((a,b) => a.sortDate - b.sortDate);
+
+  if (dayGroups.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="muted">No unpaid shop hours.</td></tr>';
+  } else {
+    body.innerHTML = '';
+    dayGroups.forEach((g, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td><input type="checkbox" class="dayCheck" data-idx="' + i + '"></td><td>' + g.dateLabel + '</td><td>' + g.worker + '</td><td class="num">' + g.hours.toFixed(2) + '</td>';
+      body.appendChild(tr);
+    });
+  }
+  document.querySelectorAll('.dayCheck').forEach(cb => cb.addEventListener('change', renderSelectedTotal));
+  renderSelectedTotal();
+}
+
+function renderSelectedTotal() {
+  let total = 0;
+  document.querySelectorAll('.dayCheck:checked').forEach(cb => {
+    total += dayGroups[parseInt(cb.dataset.idx)].hours;
+  });
+  document.getElementById('selectedHours').textContent = total.toFixed(2) + ' hrs';
+}
+
+document.getElementById('markPaidBtn').addEventListener('click', async () => {
+  const checked = Array.from(document.querySelectorAll('.dayCheck:checked'));
+  if (checked.length === 0) return;
+  const ok = confirm('Mark ' + checked.length + ' day(s) as paid?');
+  if (!ok) return;
+  const batch = db.batch();
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  checked.forEach(cb => {
+    const g = dayGroups[parseInt(cb.dataset.idx)];
+    g.entryIds.forEach(id => batch.update(db.collection('shopEntries').doc(id), { paid: true, paidAt: now }));
+  });
+  await batch.commit();
+  loadDayRows();
+  loadPaidHistory();
+});
+
+async function loadPaidHistory() {
+  const container = document.getElementById('paidHistory');
+  const snap = await db.collection('shopEntries').where('paid', '==', true).orderBy('paidAt', 'desc').limit(30).get();
+  if (snap.empty) { container.innerHTML = '<p class="muted">None yet.</p>'; return; }
+
+  const groups = {};
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!d.clockOut) return;
+    const inTime = d.clockIn.toDate();
+    const key = dayKey(inTime) + '|' + d.worker;
+    if (!groups[key]) groups[key] = { dateLabel: fmtDate(inTime), sortDate: inTime, worker: d.worker, hours: 0 };
+    groups[key].hours += hoursBetween(inTime, d.clockOut.toDate());
+  });
+  const rows = Object.values(groups).sort((a,b) => b.sortDate - a.sortDate).slice(0, 15);
+  container.innerHTML = '';
+  rows.forEach(g => {
+    const row = document.createElement('div');
+    row.className = 'jobRow';
+    row.innerHTML = '<span>' + g.dateLabel + ' — ' + g.worker + '</span><span class="mono">' + g.hours.toFixed(2) + ' hrs</span>';
+    container.appendChild(row);
+  });
+}
+
+// -- hours by job (drill-down) --
+async function loadJobHoursList() {
+  const container = document.getElementById('jobHoursList');
+  container.innerHTML = '<p class="muted">Loading...</p>';
+
+  const [jobsSnap, entriesSnap] = await Promise.all([
+    db.collection('jobs').orderBy('name').get(),
+    db.collection('jobEntries').get()
+  ]);
+
+  const byJob = {}; // jobId -> {name, entries: [{date, hours}], total}
+  entriesSnap.forEach(doc => {
+    const d = doc.data();
+    if (!d.clockOut) return;
+    const inTime = d.clockIn.toDate();
+    const hrs = hoursBetween(inTime, d.clockOut.toDate());
+    if (!byJob[d.jobId]) byJob[d.jobId] = { name: d.jobName, total: 0, byDay: {} };
+    const dKey = dayKey(inTime);
+    byJob[d.jobId].total += hrs;
+    byJob[d.jobId].byDay[dKey] = (byJob[d.jobId].byDay[dKey] || { label: fmtDate(inTime), hours: 0, sort: inTime });
+    byJob[d.jobId].byDay[dKey].hours += hrs;
+  });
+
+  if (jobsSnap.empty) { container.innerHTML = '<p class="muted">No jobs yet.</p>'; return; }
+
+  container.innerHTML = '';
+  jobsSnap.forEach(doc => {
+    const job = doc.data();
+    const data = byJob[doc.id];
+    const row = document.createElement('div');
+    row.className = 'jobRow clickable';
+    row.innerHTML = '<span>' + job.name + '</span><span class="mono">' + (data ? data.total.toFixed(2) : '0.00') + ' hrs</span>';
+    const detail = document.createElement('div');
+    detail.className = 'jobDetail';
+    if (data) {
+      const days = Object.values(data.byDay).sort((a,b) => b.sort - a.sort);
+      detail.innerHTML = days.map(d => '<div class="jobRow"><span>' + d.label + '</span><span class="mono">' + d.hours.toFixed(2) + ' hrs</span></div>').join('');
+    } else {
+      detail.innerHTML = '<p class="muted">No hours logged yet.</p>';
+    }
+    row.onclick = () => detail.classList.toggle('open');
+    container.appendChild(row);
+    container.appendChild(detail);
+  });
+}
+
+// ---------- PWA service worker ----------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
