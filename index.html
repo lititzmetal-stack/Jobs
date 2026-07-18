@@ -275,12 +275,14 @@
       </div>
 
       <div class="card">
-        <h3 class="sectionTitle">Jobs</h3>
+        <h3 class="sectionTitle">Active jobs</h3>
         <div id="jobManageList"></div>
         <div class="row" style="margin-top:14px;">
           <input type="text" id="newJobName" placeholder="New job name" style="flex:1;">
           <button class="btn smallBtn" id="addJobBtn">Add job</button>
         </div>
+        <h3 class="sectionTitle" style="margin-top:20px;">Completed jobs</h3>
+        <div id="completedJobList"></div>
       </div>
 
       <div class="card">
@@ -419,16 +421,19 @@ async function loadClockView() {
   const jobList = document.getElementById('jobList');
   jobList.innerHTML = '<div class="empty">Loading jobs...</div>';
 
-  const [jobsSnap, openShopSnap, openJobSnap] = await Promise.all([
-    db.collection('jobs').where('active', '==', true).orderBy('name').get(),
-    db.collection('shopEntries').where('worker', '==', worker).where('clockOut', '==', null).limit(1).get(),
-    db.collection('jobEntries').where('worker', '==', worker).where('clockOut', '==', null).limit(1).get()
+  try {
+  const [jobsSnap, shopSnap, jobSnap] = await Promise.all([
+    db.collection('jobs').get(),
+    db.collection('shopEntries').where('worker', '==', worker).get(),
+    db.collection('jobEntries').where('worker', '==', worker).get()
   ]);
 
+  // find the currently-open shop/job entries in JS (avoids needing a composite index)
   let openShopId = null, openShop = null;
-  if (!openShopSnap.empty) { openShopId = openShopSnap.docs[0].id; openShop = openShopSnap.docs[0].data(); }
+  shopSnap.forEach(d => { if (!d.data().clockOut && !openShopId) { openShopId = d.id; openShop = d.data(); } });
   let openJobId = null, openJob = null;
-  if (!openJobSnap.empty) { openJobId = openJobSnap.docs[0].id; openJob = openJobSnap.docs[0].data(); }
+  jobSnap.forEach(d => { if (!d.data().clockOut && !openJobId) { openJobId = d.id; openJob = d.data(); } });
+
 
   const shopBar = document.getElementById('shopStatusBar');
   const shopBtn = document.getElementById('shopToggleBtn');
@@ -477,7 +482,10 @@ async function loadClockView() {
   }
 
   jobList.innerHTML = '';
-  jobsSnap.forEach(doc => {
+  const jobDocs = jobsSnap.docs.slice()
+    .filter(d => d.data().completed !== true)
+    .sort((a, b) => (a.data().name || '').localeCompare(b.data().name || ''));
+  jobDocs.forEach(doc => {
     const job = doc.data();
     const isCurrent = openJobId && openJob && openJob.jobId === doc.id;
     const b = document.createElement('button');
@@ -507,6 +515,12 @@ async function loadClockView() {
     };
     jobList.appendChild(b);
   });
+  } catch (err) {
+    console.error('Clock view failed:', err);
+    jobList.innerHTML = '<div class="empty" style="color:var(--rust)">Could not load. ' +
+      (String(err).includes('index') ? 'A database index is still building — wait a minute and retry.' : 'Check your connection and Firestore rules.') +
+      '</div>';
+  }
 }
 
 // ---------- Summary view ----------
@@ -559,35 +573,94 @@ document.getElementById('addWorkerBtn').addEventListener('click', async () => {
 
 // -- job management --
 async function loadJobManageList() {
-  const container = document.getElementById('jobManageList');
-  container.innerHTML = 'Loading...';
-  const snap = await db.collection('jobs').orderBy('name').get();
-  container.innerHTML = '';
-  if (snap.empty) {
-    container.innerHTML = '<p class="muted">No jobs yet. Add one below.</p>';
-    return;
+  const activeC = document.getElementById('jobManageList');
+  const doneC = document.getElementById('completedJobList');
+  activeC.innerHTML = 'Loading...'; doneC.innerHTML = '';
+  const snap = await db.collection('jobs').get();
+  const jobs = snap.docs.slice().sort((a, b) => (a.data().name || '').localeCompare(b.data().name || ''));
+
+  const active = jobs.filter(d => d.data().completed !== true);
+  const done = jobs.filter(d => d.data().completed === true);
+
+  // Active jobs: Complete + Delete
+  activeC.innerHTML = '';
+  if (active.length === 0) {
+    activeC.innerHTML = '<p class="muted">No active jobs. Add one below.</p>';
+  } else {
+    active.forEach(doc => {
+      const job = doc.data();
+      const row = document.createElement('div');
+      row.className = 'jobRow';
+      row.innerHTML = '<span>' + job.name + '</span>';
+      const btns = document.createElement('span');
+      btns.style.cssText = 'display:flex;gap:6px;';
+
+      const complete = document.createElement('button');
+      complete.className = 'btn smallBtn';
+      complete.textContent = 'Complete';
+      complete.onclick = async () => {
+        await db.collection('jobs').doc(doc.id).update({ completed: true, completedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        loadJobManageList();
+      };
+
+      const del = document.createElement('button');
+      del.className = 'btn smallBtn rust';
+      del.textContent = 'Delete';
+      del.onclick = async () => {
+        if (!confirm('Delete "' + job.name + '"? Logged hours stay in the records.')) return;
+        await db.collection('jobs').doc(doc.id).delete();
+        loadJobManageList();
+        loadJobHoursList();
+      };
+
+      btns.appendChild(complete); btns.appendChild(del);
+      row.appendChild(btns);
+      activeC.appendChild(row);
+    });
   }
-  snap.forEach(doc => {
-    const job = doc.data();
-    const row = document.createElement('div');
-    row.className = 'jobRow';
-    row.innerHTML = '<span>' + job.name + '</span>';
-    const toggleWrap = document.createElement('label');
-    toggleWrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:0.8rem;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.className = 'toggle'; cb.checked = job.active;
-    cb.onchange = async () => { await db.collection('jobs').doc(doc.id).update({ active: cb.checked }); };
-    toggleWrap.appendChild(cb);
-    toggleWrap.appendChild(document.createTextNode('Active'));
-    row.appendChild(toggleWrap);
-    container.appendChild(row);
-  });
+
+  // Completed jobs: Reopen + Delete
+  if (done.length === 0) {
+    doneC.innerHTML = '<p class="muted">No completed jobs yet.</p>';
+  } else {
+    doneC.innerHTML = '';
+    done.forEach(doc => {
+      const job = doc.data();
+      const row = document.createElement('div');
+      row.className = 'jobRow';
+      row.innerHTML = '<span style="color:var(--steel-light);">' + job.name + '</span>';
+      const btns = document.createElement('span');
+      btns.style.cssText = 'display:flex;gap:6px;';
+
+      const reopen = document.createElement('button');
+      reopen.className = 'btn smallBtn';
+      reopen.textContent = 'Reopen';
+      reopen.onclick = async () => {
+        await db.collection('jobs').doc(doc.id).update({ completed: false });
+        loadJobManageList();
+      };
+
+      const del = document.createElement('button');
+      del.className = 'btn smallBtn rust';
+      del.textContent = 'Delete';
+      del.onclick = async () => {
+        if (!confirm('Delete "' + job.name + '"? Logged hours stay in the records.')) return;
+        await db.collection('jobs').doc(doc.id).delete();
+        loadJobManageList();
+        loadJobHoursList();
+      };
+
+      btns.appendChild(reopen); btns.appendChild(del);
+      row.appendChild(btns);
+      doneC.appendChild(row);
+    });
+  }
 }
 document.getElementById('addJobBtn').addEventListener('click', async () => {
   const input = document.getElementById('newJobName');
   const name = input.value.trim();
   if (!name) return;
-  await db.collection('jobs').add({ name, active: true });
+  await db.collection('jobs').add({ name, completed: false });
   input.value = '';
   loadJobManageList();
   loadJobHoursList();
@@ -656,7 +729,7 @@ document.getElementById('markPaidBtn').addEventListener('click', async () => {
 
 async function loadPaidHistory() {
   const container = document.getElementById('paidHistory');
-  const snap = await db.collection('shopEntries').where('paid', '==', true).orderBy('paidAt', 'desc').limit(30).get();
+  const snap = await db.collection('shopEntries').where('paid', '==', true).get();
   if (snap.empty) { container.innerHTML = '<p class="muted">None yet.</p>'; return; }
 
   const groups = {};
@@ -684,11 +757,11 @@ async function loadJobHoursList() {
   container.innerHTML = '<p class="muted">Loading...</p>';
 
   const [jobsSnap, entriesSnap] = await Promise.all([
-    db.collection('jobs').orderBy('name').get(),
+    db.collection('jobs').get(),
     db.collection('jobEntries').get()
   ]);
 
-  const byJob = {}; // jobId -> {name, entries: [{date, hours}], total}
+  const byJob = {}; // jobId -> {name, total, byDay}
   entriesSnap.forEach(doc => {
     const d = doc.data();
     if (!d.clockOut) return;
@@ -701,15 +774,31 @@ async function loadJobHoursList() {
     byJob[d.jobId].byDay[dKey].hours += hrs;
   });
 
-  if (jobsSnap.empty) { container.innerHTML = '<p class="muted">No jobs yet.</p>'; return; }
-
-  container.innerHTML = '';
+  // Build the display list from current jobs, plus any deleted jobs that still have logged hours.
+  const items = [];
+  const seen = {};
   jobsSnap.forEach(doc => {
+    seen[doc.id] = true;
     const job = doc.data();
     const data = byJob[doc.id];
+    items.push({ name: job.name, completed: job.completed === true, deleted: false, data });
+  });
+  Object.keys(byJob).forEach(id => {
+    if (!seen[id]) items.push({ name: byJob[id].name, completed: false, deleted: true, data: byJob[id] });
+  });
+
+  if (items.length === 0) { container.innerHTML = '<p class="muted">No jobs yet.</p>'; return; }
+  items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  container.innerHTML = '';
+  items.forEach(item => {
+    const data = item.data;
+    let tag = '';
+    if (item.deleted) tag = ' <span class="muted">(deleted)</span>';
+    else if (item.completed) tag = ' <span class="muted">(completed)</span>';
     const row = document.createElement('div');
     row.className = 'jobRow clickable';
-    row.innerHTML = '<span>' + job.name + '</span><span class="mono">' + (data ? data.total.toFixed(2) : '0.00') + ' hrs</span>';
+    row.innerHTML = '<span>' + item.name + tag + '</span><span class="mono">' + (data ? data.total.toFixed(2) : '0.00') + ' hrs</span>';
     const detail = document.createElement('div');
     detail.className = 'jobDetail';
     if (data) {
