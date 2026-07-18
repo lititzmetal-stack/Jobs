@@ -437,6 +437,7 @@ async function loadClockView() {
 
   const shopBar = document.getElementById('shopStatusBar');
   const shopBtn = document.getElementById('shopToggleBtn');
+  shopBtn.disabled = false;
   if (openShop) {
     shopBar.classList.add('working');
     document.getElementById('shopStatusLabel').textContent = 'In the shop';
